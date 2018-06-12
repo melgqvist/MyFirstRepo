@@ -1,0 +1,20 @@
+
+INCLUDE "dml_channel.s4h";
+
+DECLARE $JDBCChannel RECORD DML_CHANNEL.JDBCConfiguration;
+
+DML_CHANNEL.SetDebug 1;
+
+$JDBCChannel=DML_CHANNEL.GetJDBCChannel("DatabaseChannel");
+
+PRINTERR Format("DriverClass = %s\n", $JDBCChannel.$DriverClass);
+PRINTERR Format("URL = %s\n", $JDBCChannel.$URL);
+PRINTERR Format("User = %s\n", $JDBCChannel.$User);
+PRINTERR Format("Password = %s\n", $JDBCChannel.$Password);
+
+$JDBCChannel=DML_CHANNEL.GetJDBCChannel("DatabaseChannel_X");
+
+EXIT;
+
+
+

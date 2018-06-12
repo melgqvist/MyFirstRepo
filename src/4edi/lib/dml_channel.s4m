@@ -1,0 +1,154 @@
+INCLUDE "sl_fileio.s4h" ONCE;
+
+DECLARE PUBLIC MODULE DML_CHANNEL
+{
+
+	DECLARE $true = 1 CONSTANT    INTEGER;
+	DECLARE $false = NOT($true)   CONSTANT INTEGER;
+	DECLARE $Debug = $False       INTEGER;
+    
+	DECLARE STATEMENT MODULE_INIT
+	{
+		RETURN;
+	}
+
+	DECLARE  PUBLIC STATEMENT SetDebug IN $DebugFlag
+	{
+			$Debug = $DebugFlag;
+			RETURN;
+	}
+	
+	DECLARE PUBLIC FUNCTION GetJDBCChannel($ChannelName PRIMITIVE) RECORD JDBCConfiguration
+
+	{
+		DECLARE $Data        STRING;
+		DECLARE $Array[]     STRING;
+		DECLARE $Channel     RECORD JDBCConfiguration;
+		DECLARE $NameValue[] STRING;
+
+		$Data = GetData($ChannelName,$ChannelType_JDBC);
+
+		$Array = SL_STRING.FieldExplode($Data, "\n");
+		FOR $i = 1 TO ArraySize($Array)
+		{
+			IF STRLEN($Array[$i]) < 3
+			{
+				CONTINUE;
+			}
+				$NameValue = SL_STRING.FieldExplode($Array[$i], ";");
+			CASE $NameValue[1]
+			WHEN $JDBC_DriverClass
+			{
+				$Channel.$DriverClass = $NameValue[2];
+			}
+			WHEN $JDBC_URL
+			{
+				$Channel.$URL = $NameValue[2];
+			}
+			WHEN $JDBC_User
+			{
+				$Channel.$User = $NameValue[2];
+			}
+			WHEN $JDBC_Password
+			{
+				$Channel.$Password = $NameValue[2];
+			}
+			WHEN $JDBC_Delay
+			{
+				$Channel.$Delay = $NameValue[2];
+			}
+			WHEN $JDBC_Attempts
+			{
+				$Channel.$Attempts = $NameValue[2];
+			}
+			WHEN OTHERS
+			{
+				LOG Format ("%s is not a valid configuration parameter", $NameValue[1]) TYPE "WARNING";
+			}
+		}
+		RETURN $Channel;
+	}
+
+
+
+	DECLARE FUNCTION GetData($ChannelName PRIMITIVE, $ChannelType PRIMITIVE) PRIMITIVE
+	{
+		
+		DECLARE $SharedLocal STRING;
+		DECLARE $handle      RECORD SL_FILEIO.FileHandle;
+		DECLARE $ChannelFile STRING;
+		DECLARE $Data        STRING;
+		DECLARE $Extension   STRING;
+		
+
+		IMPORT "B2BI_SHARED_LOCAL" INTO $SharedLocal;
+		
+		CASE $ChannelType
+		WHEN $ChannelType_JDBC
+		{
+			$Extension = $JDBCChannelExtension;
+		}
+		WHEN OTHERS
+		{
+			LOG Format("ChannelType %s is not supported");
+			THROW;
+		}
+		
+		TRY
+		{
+
+			$ChannelFile = $SharedLocal 
+				& SL_FILEIO.DirectorySeparator()
+				& "config" 
+				& SL_FILEIO.DirectorySeparator() 
+				& $Channelname
+				& "."
+				& $Extension;
+				
+			TraceDebug $ChannelFile;
+			TRY 
+			{
+				NOLOG
+				{
+					$handle = SL_FILEIO.OpenTextRead($ChannelFile);
+				}
+			} 
+			CATCH $Ex 
+			WHEN OTHERS
+			{
+				IF $error = SL_FILEIO.$Error_OpenTextRead_Open
+				{
+					LOG Format("Can't open expected Channel File %s", $Channelfile);
+				}
+				ELSE
+				{
+					LOG $Logstring;
+				}
+				THROW;
+			}
+			
+			SL_FILEIO.ReadCount $handle COUNT 1024 DATA $data;
+			SL_FILEIO.CloseFile $handle;
+		}
+		CATCH $ex
+		WHEN OTHERS
+		{
+			THROW $ex;
+		}	
+		RETURN $data;
+	}
+
+			
+	/*---- Name : TraceDebug -------------------------------------------------------
+	Task		: Write a debug statement to the TraceLog.
+	Arguments   : String
+	Returnvalues: 
+	------------------------------------------------------------------------------*/
+	DECLARE STATEMENT TraceDebug IN $Str PRIMITIVE
+	{
+		IF $Debug {
+			LOG $Str TYPE "DEBUG";
+		}
+		RETURN;
+	}
+}
