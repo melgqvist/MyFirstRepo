@@ -1,0 +1,26 @@
+DECLARE PUBLIC MODULE INTERFACE DML_CHANNEL
+{
+
+	DECLARE $JDBC_URL         = "URL"          CONSTANT STRING;
+	DECLARE $JDBC_DriverClass = "Driver Class" CONSTANt STRING;
+	DECLARE $JDBC_User        = "User"         CONSTANT STRING;
+	DECLARE $JDBC_Password    = "Password"     CONSTANt STRING;
+	DECLARE $JDBC_Delay       = "Delay"        CONSTANT STRING;
+	DECLARE $JDBC_Attempts    = "Attempts"     CONSTANt STRING;
+	
+	DECLARE $ChannelType_JDBC = "JDBC" CONSTANT STRING;
+	
+	DECLARE $JDBCChannelExtension = "jcnl" CONSTANT STRING;
+	
+	DECLARE PUBLIC $JDBCChannelAttributeName = "JDBCChannelName" CONSTANT STRING;
+
+	DECLARE PUBLIC RECORD JDBCConfiguration
+	{
+		DECLARE PUBLIC FIELD $DriverClass STRING; 
+		DECLARE PUBLIC FIELD $URL         STRING;
+		DECLARE PUBLIC FIELD $User        STRING; 
+		DECLARE PUBLIC FIELD $Password    STRING;
+		DECLARE PUBLIC FIELD $Delay       INTEGER; 
+		DECLARE PUBLIC FIELD $Attempts    INTEGER;
+	}
+}

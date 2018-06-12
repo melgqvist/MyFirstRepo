@@ -1,0 +1,6 @@
+Driver Class;com.mysql.jdbc.Driver
+URL;jdbc:mysql://localhost:3306/test?jdbcCompliantTruncation=false
+User;b2bi
+Password;b2bi
+Delay;3
+Attempts;5

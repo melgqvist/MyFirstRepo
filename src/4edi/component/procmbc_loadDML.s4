@@ -1,0 +1,752 @@
+ /*===========================================================================
+
+Name        : procmbc_loadDML.s4    
+
+Project     : B2Bi samples
+
+Description : Set the attributes to execute map-loader stage.
+
+-----------------------------------------------------------------------------
+$History: $
+===========================================================================*/
+
+/*===========================================================================
+                               Standard INCLUDE Files
+===========================================================================*/
+
+INCLUDE "mbci_hierchmsgenv.s4h"         ONCE;
+INCLUDE "cfg_genericpropertystage.s4h"  ONCE;
+INCLUDE "mbci_genericpropertystage.s4h" ONCE;
+
+INCLUDE "log_entry.s4h"                 ONCE;
+INCLUDE "log_genericevent2.s4h"         ONCE;
+ 
+INCLUDE "b2bi_userevent.s4h"	           ONCE;
+
+
+INCLUDE "cfgruntime_mapstage.s4h" ONCE;
+INCLUDE "cfg_mapstageex1.s4h"     ONCE;
+INCLUDE "cfg_dmcmapobj.s4h"       ONCE;
+INCLUDE "att_DynamicMap.s4h"      ONCE;
+INCLUDE "sysinfo.s4h"             ONCE;
+INCLUDE "att_jdbc.s4h"            ONCE;
+
+INCLUDE "dml_channel.s4h"        ONCE;
+
+
+/*===========================================================================
+                               Project INCLUDE Files
+===========================================================================*/
+
+/* Declare Configuration tags here */
+
+DECLARE $ConfigTag_Debug       =  "Debug (y/[n])"                    CONSTANT STRING;
+DECLARE $ConfigTag_Output1     =  "Output names for Next Activity 1" CONSTANT STRING;
+DECLARE $ConfigTag_Output2     =  "Output names for Next Activity 2" CONSTANT STRING;
+DECLARE $ConfigTag_Output3     =  "Output names for Next Activity 3" CONSTANT STRING;
+DECLARE $ConfigTag_Output4     =  "Output names for Next Activity 4" CONSTANT STRING;
+DECLARE $ConfigTag_Output5     =  "Output names for Next Activity 5" CONSTANT STRING;
+DECLARE $ConfigTag_Output6     =  "Output names for Next Activity 6" CONSTANT STRING;
+
+   DECLARE PUBLIC $MapLoaderAttributesName = "MapLoaderAttributes" CONSTANT STRING;
+   DECLARE $JDBCChannelOverridePropertiesAttributeName  = "JDBCChannelOverrideProperties" CONSTANT STRING;
+
+
+/*===========================================================================
+                               IMBC_COMMON Module
+===========================================================================*/
+
+DECLARE MODULE INTERFACE mbc_genericpropertystage { }
+
+DECLARE MODULE IMBC_COMMON
+{
+
+	DECLARE PUBLIC $MBCName = "Load DML"	CONSTANT STRING;
+
+
+    /*---- Name : GetInfo -------------------------------------------------------
+    Task        : Get MBC Information
+    Arguments   : ---
+    Returnvalues: See Declaration
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC STATEMENT GetInfo OUT $Name Revision OUT $Revision Description OUT $Description
+    {
+        $Name        = $MBCName;
+        $Revision    = "1.0.0";
+        $Description = "Load a DML map dynamically";
+        RETURN;
+    }
+}
+
+/*===========================================================================
+                       IMBC_GENERICPROPERTYSTAGE Module
+===========================================================================*/
+
+DECLARE MODULE IMBC_GENERICPROPERTYSTAGE
+{
+
+    /*---- Name : Initialize -------------------------------------------------------
+    Task        : This statement is called once when the component is loaded for 
+                  the first time, and thereafter whenever the configuration for 
+                  the component has been modified.
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC STATEMENT Initialize IN $Configuration PRIMITIVE
+    {
+        RETURN;
+    }
+
+    /*---- Name : GetKeywords -------------------------------------------------------
+    Task        : This function is called when the component is registered in the
+                  component registry.
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC FUNCTION GetKeywords() []
+    {
+        /* Each keyword represent a tag for a configuration field in the GUI */
+        DECLARE $Keywords[] = 
+		{
+			$ConfigTag_Output1,
+			$ConfigTag_Output2,
+			$ConfigTag_Output3,
+			$ConfigTag_Output4,
+			$ConfigTag_Output5,
+			$ConfigTag_Output6,
+			$ConfigTag_Debug
+        } CONSTANT STRING;
+        
+        RETURN $Keywords;
+    }
+}
+
+/*===========================================================================
+                       IMBC_HIERCHMSGENV Module
+===========================================================================*/
+
+DECLARE MODULE IMBC_HIERCHMSGENV
+{
+
+    /* Record declarations */
+    
+    /* The number of fields in this record excluding $NextActivityId, 
+       must correspond to the number of elements in $Keywords[] array in IMBC_GENERICPROPERTYSTAGE.GetKeywords() function
+    */
+    DECLARE RECORD Configuration                                                                                /* <<d>> */
+    {
+        DECLARE $Output1           STRING;
+        DECLARE $Output2           STRING;
+        DECLARE $Output3           STRING;
+        DECLARE $Output4           STRING;
+        DECLARE $Output5           STRING;
+        DECLARE $Output6           STRING;
+        DECLARE $Debug             STRING;
+        DECLARE $NextActivityIds[] INTEGER;    /* Standard definition for following activities */
+    }
+    
+    DECLARE $Debug INTEGER;
+    DECLARE $true = 1 CONSTANT INTEGER;
+    DECLARE $false = NOT($true) CONSTANT INTEGER;         
+       
+   /*---- Name : Initialize -------------------------------------------------------
+    Task        : This statement is called once when the component is loaded for 
+                  the first time, and thereafter whenever the configuration for 
+                  the component has been modified.
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC STATEMENT Initialize IN $Configuration PRIMITIVE
+    {     
+        RETURN;
+    }
+
+    /*---- Name : GetKeywords -----------------------------------------------------
+    Task        : This function is called when the component is registered in the
+                  component registry.
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC FUNCTION GetKeywords() []
+    {
+        DECLARE $Keywords[] = 
+        {        
+            CFG_GENERICPROPERTYSTAGE.$SubclassName,
+            MBCI_HIERCHMSGENV.$Keyword_StageCreator                       
+        } CONSTANT STRING;
+
+        RETURN $Keywords;
+    }
+
+    /*---- Name : GetCharacteristics -----------------------------------------------------
+    Task        : This function is called when the component is loaded.
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC FUNCTION GetCharacteristics($Qualifier PRIMITIVE) PRIMITIVE
+    {
+        DECLARE $ReturnValue INTEGER;
+
+        CASE $Qualifier
+        WHEN MBCI_HIERCHMSGENV.$GetCharacteristics_Qualifier_LoadSingleInstance 
+        {
+            /*  This MBC may be loaded in a single instance */
+            $ReturnValue = 0;
+        }
+        WHEN OTHERS 
+        {
+            /* This MBC may be loaded in multiple instances */
+            $ReturnValue = 0;
+        }
+        RETURN $ReturnValue;
+    }
+
+   /*---- Name : Stop -------------------------------------------------------------
+    Task        : This statement is called when the process is stopped
+    Arguments   : ---
+    Returnvalues: ---
+    ------------------------------------------------------------------------------*/
+    DECLARE PUBLIC STATEMENT Stop
+    {
+        RETURN;
+    }
+
+	/*()----------------------------------------------------------------------------
+	** ProcessMessage
+	** - This statement is called for each message to process.
+	**----------------------------------------------------------------------------*/
+	DECLARE PUBLIC STATEMENT
+	ProcessMessage    IN $SessionId           PRIMITIVE
+	    MessageId     IN $MessageId           PRIMITIVE
+	    Configuration IN $ConfigurationString PRIMITIVE
+	{
+		DECLARE $StageConfiguration     RECORD MBCI_GENERICPROPERTYSTAGE.StageConfiguration;
+		DECLARE $Config                 RECORD Configuration;
+		DECLARE $newMessageId           INTEGER;
+
+		DECLARE $DynamicMBCAttribute               RECORD MBCI_HIERCHMSGENV.AttributeDynamicMBC;
+
+		DECLARE $MapLoaderAttribute                RECORD MAPLOADER;
+		DECLARE $MapStage                          RECORD CFGRUNTIME_MAPSTAGE.MapStage;
+		DECLARE $EmptyMapStage                     CONSTANT RECORD CFGRUNTIME_MAPSTAGE.MapStage;
+		DECLARE $DynamicStageConfigurationValue    STRING;
+		DECLARE $AltDynamicStageConfiguration      RECORD MBCI_GENERICPROPERTYSTAGE.StageConfiguration;
+		DECLARE $AltDynamicStageConfigurationValue STRING;
+		DECLARE $MBCFilePath                       STRING;
+		DECLARE $AttributeValue                    STRING;
+		DECLARE $Component                         STRING;
+		DECLARE $JDBCChannel                       STRING;
+		DECLARE $JDBCChannelOverrideProperties	   RECORD JDBCChannelOverrideProperties;
+#		DECLARE $SAPChannelOverrideProperties	   RECORD SAPChannelOverrideProperties;
+#		DECLARE $WSChannelOverrideProperties	   RECORD B2BiWSChannelOverrideProperties;
+
+
+		TRY {
+			
+			SL_ARRAY.Clear $JDBCChannelOverrideProperties.$Overrides;
+#			SL_ARRAY.Clear $SAPChannelOverrideProperties.$SAPOverride;
+#			SL_ARRAY.Clear $WSChannelOverrideProperties.$B2BiWSOverride;
+			
+#			DECLARE $NrOfDynamicMBCStages= 1 INTEGER;
+
+			$Config = RetrieveConfiguration($ConfigurationString);	
+			$Debug = $Config.$Debug;
+			
+			DECLARE $AttributeString STRING;
+			
+			TRY
+			{
+				$AttributeString = MBC_HIERCHMSGENV.GetAttribute($SessionId,$MessageId,$MapLoaderAttributeName);
+				UNSERIALIZE $AttributeString INTO $MapLoaderAttribute;
+			}
+			CATCH $ex
+			WHEN OTHERS
+			{
+				THROW;
+			}
+			
+			TraceDebug $MapLoaderAttribute.$MapName;
+			
+			TRY 
+			{
+				NOLOG 
+				{
+					$JDBCChannel = MBC_HIERCHMSGENV.GetAttribute($SessionId,$MessageId, DML_CHANNEL.$JDBCChannelAttributeName);
+				}
+				AddJDBCChannelOverride $JDBCChannel 
+					Component $MapLoaderAttribute.$Mapname
+					JDBCChannelOverrideProperties $JDBCChannelOverrideProperties;			
+		
+			}
+			CATCH $Exception
+			WHEN OTHERS {
+				THROW;
+			}
+
+
+			/*
+			 * If the dynamic attribute is already set, add the new MBC on the first position of the array of stages
+			 */
+			TRY {
+				NOLOG {
+					$AttributeValue = MBC_HIERCHMSGENV.GetAttribute($SessionId,$MessageId, MBCI_HIERCHMSGENV.$Attribute_DynamicMBC);
+
+					UNSERIALIZE $AttributeValue INTO $DynamicMBCAttribute;
+
+					IF ARRAYSIZE ($DynamicMBCAttribute.$Stages) > 0 {	
+						ARRAY INSERT $DynamicMBCAttribute.$Stages FROM 1;
+					}
+				}
+			}
+			CATCH $Exception
+			WHEN OTHERS {
+			}
+
+			/*
+			 * Create the dynamic MBC attribute
+			 * The name of the dynamic MBC to use is dynamically created using the
+			 * message type read from the message
+			 */
+
+			CASE System()
+			WHEN $System_Win32
+			{
+				$MBCFilePath= "%CORE_ROOT%\\c\\component\\map-loader.dll";
+			}
+			WHEN OTHERS
+			{
+				$MBCFilePath = "${CORE_ROOT}/c/component/map-loader.so";
+			}
+
+			TraceDebug Format("Dynamic processing MBC name is %s", $MBCFilePath);
+
+			$MapStage = $EmptyMapStage;
+
+			$MapStage.$Type = "b2bi"; /* Set type so channel aliases are done correctly in dml for custom functions */
+
+			DECLARE $ConfigValue = 0 INTEGER;
+						
+			DECLARE $Outputs[][] STRING;
+
+			IF $Config.$Output1 <> ""
+			{
+				$Outputs[1] = SetOutputs($Config.$Output1);
+			}
+			IF $Config.$Output2 <> ""
+			{
+				$Outputs[2] = SetOutputs($Config.$Output2);
+			}
+			IF $Config.$Output3 <> ""
+			{
+				$Outputs[3] = SetOutputs($Config.$Output3);
+			}
+			IF $Config.$Output4 <> ""
+			{
+				$Outputs[4] = SetOutputs($Config.$Output4);
+			}
+			IF $Config.$Output5 <> ""
+			{
+				$Outputs[5] = SetOutputs($Config.$Output5);
+			}
+			IF $Config.$Output6 <> ""
+			{
+				$Outputs[6] = SetOutputs($Config.$Output6);
+			}
+
+			FOR $i = 1 TO ArraySize($Outputs)
+			{
+				TraceDebug Format("Outputs for NextActivity %d", $i);
+				FOR $j = 1 TO ArraySize($Outputs[$i])
+				{
+					TraceDebug $Outputs[$i][$j];
+				}
+			}	
+			
+			IF ArraySize($Outputs) <> ArraySize($Config.$NextActivityIds)
+			{
+				LOG Format("Number of Outputs defined, %s must match the number of next activities %s", 
+					ArraySize($Outputs), ArraySize($Config.$NextActivityIds));
+				THROW;
+			}
+			
+			$MapStage.$Debug = $Config.$Debug;
+			$MapStage.$DetectorMode = $False;
+			$MapStage.$CheckFacetOnInput = $ConfigValue;
+			$MapStage.$CheckFacetOnOutput = $ConfigValue;
+
+			FOR $i = 1 To ArraySize($Outputs)
+			{
+				FOR $j = 1 TO ArraySize($Outputs[$i])
+				{
+					$MapStage.$Output[ArraySize($MapStage.$Output) + 1].$Name = $Component & ":" & $Outputs[$i][$j];			
+					$MapStage.$Output[ArraySize($MapStage.$Output)].$NextActivityId = $Config.$NextActivityIds[$i];
+				}
+			}
+
+			$MapStage.$Debug = $Debug;
+
+			$DynamicStageConfigurationValue    = ToString($MapStage);
+	
+#			$DynamicStageConfiguration.$NextActivityIds[1] = 0;
+
+			$AltDynamicStageConfiguration.$Tags[1].$Name  = "Debug (y/[n])";
+			$AltDynamicStageConfiguration.$Tags[1].$Value = "Y";
+			SERIALIZE $AltDynamicStageConfiguration INTO $AltDynamicStageConfigurationValue;
+
+			$DynamicMBCAttribute.$Stages[1].$MBCFilePath        = $MBCFilePath;
+			$DynamicMBCAttribute.$Stages[1].$MBCConfiguration   = "";
+			$DynamicMBCAttribute.$Stages[1].$StageConfiguration = $DynamicStageConfigurationValue;
+
+			$DynamicMBCAttribute.$Stages[1].$AlternateMBCFilePath        = "procmbc_b2bimessage.x4";
+			$DynamicMBCAttribute.$Stages[1].$AlternateMBCConfiguration   = "";
+			$DynamicMBCAttribute.$Stages[1].$AlternateStageConfiguration = $AltDynamicStageConfigurationValue;
+
+			SERIALIZE $DynamicMBCAttribute INTO $AttributeValue;
+
+			MBC_HIERCHMSGENV.SetAttribute $SessionId
+				MessageId             $MessageId
+				Name                  MBCI_HIERCHMSGENV.$Attribute_DynamicMBC
+				Value                 $AttributeValue;
+
+			IF ARRAYSIZE($JDBCChannelOverrideProperties.$Overrides) > 0
+			{
+				DECLARE $AttributeValue STRING;
+
+				SERIALIZE $JDBCChannelOverrideProperties INTO $AttributeValue;
+
+				MBC_HIERCHMSGENV.SetAttribute $SessionId
+					MessageId $MessageId
+					Name $JDBCChannelOverridePropertiesAttributeName
+					Value $AttributeValue;
+			}
+			
+			/* Create message copy */
+
+			$newMessageId = MBC_HIERCHMSGENV.CreateMessageCopy($SessionId, $MessageId);
+
+			/* Set message destination */
+
+			MBC_HIERCHMSGENV.SetActivityBranch $SessionId
+				MessageId $newMessageId
+				ActivityBranchId $Config.$NextActivityIds[1];
+
+			/* Log message */
+
+			LogSuccess      $SessionId
+			    LoggerId    MBC_HIERCHMSGENV.GetLoggerId($SessionId, $newMessageId)
+			    ActivityId  MBC_HIERCHMSGENV.GetActivityBranch($SessionId, $MessageId)
+				MessageId   $MessageId
+				MapName     $MapLoaderAttribute.$MapName
+				JDBCChannel $JDBCChannel
+				JDBCChannelOverrideProperties $JDBCChannelOverrideProperties;
+				
+			/* We are done */
+
+			MBC_HIERCHMSGENV.ProcessMessageDone $SessionId MessageId $MessageId;
+
+			RETURN;
+
+		}
+		CATCH $Exception
+		WHEN OTHERS
+		{
+			LogError        $SessionId
+                LoggerId   MBC_HIERCHMSGENV.GetLoggerId($SessionId, $MessageId)
+                 ActivityId MBC_HIERCHMSGENV.GetActivityBranch($SessionId, $MessageId)
+				 MessageId  $MessageId
+                Description $Logstring;
+				 
+
+			MBC_HIERCHMSGENV.StopMessage $SessionId MessageId $MessageId;
+		}
+
+		/* Done! */
+		MBC_HIERCHMSGENV.ProcessMessageDone $SessionId MessageId $MessageId;
+
+		RETURN;
+	}
+    /* ================================ END ProcessMessage ================================ */
+    
+    /* ====================================================================================
+        Helper Functions and Statements 
+    ======================================================================================= */
+    
+    /*---- Name : RetrieveConfiguration ----------------------------------------------
+    Task              : Retrieve MBC configuration
+    Arguments         : Seq. Activity Stage Configuration record, current MBC configuration record
+    Returnvalues      : Current MBC configuration record
+    ------------------------------------------------------------------------------*/
+    DECLARE FUNCTION RetrieveConfiguration($ConfigurationString PRIMITIVE) RECORD Configuration
+    {          
+        DECLARE $StageConfiguration RECORD MBCI_GENERICPROPERTYSTAGE.StageConfiguration;
+        DECLARE $Configuration      RECORD Configuration;
+        TRY 
+        {
+        	UNSERIALIZE $ConfigurationString INTO $StageConfiguration;
+        }
+        CATCH $Exception
+        WHEN OTHERS
+        {
+        	LOG "Error when Unserializing Configuration";
+            THROW;
+        }
+       
+        FOR $i = 1 TO ArraySize($StageConfiguration.$Tags)
+        {         
+            CASE $StageConfiguration.$Tags[$i].$Name
+            WHEN  $ConfigTag_Output1
+            {
+                $Configuration.$Output1 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+            WHEN  $ConfigTag_Output2
+            {
+                $Configuration.$Output2 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+            WHEN  $ConfigTag_Output3
+            {
+                $Configuration.$Output3 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+            WHEN  $ConfigTag_Output4
+            {
+                $Configuration.$Output4 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+            WHEN  $ConfigTag_Output5
+            {
+                $Configuration.$Output5 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+            WHEN  $ConfigTag_Output6
+            {
+                $Configuration.$Output6 = $StageConfiguration.$Tags[$i].$Value;    
+            }             
+
+            WHEN $ConfigTag_Debug
+            {
+                IF (SL_STRING.ToUpper($StageConfiguration.$Tags[$i].$Value) = "Y")
+                {
+                    $Configuration.$Debug = $True;
+                }
+                ELSE 
+                {
+                    $Configuration.$Debug = $False;
+                }
+            }    
+        }
+         
+        FOR $i = 1 to ARRAYSIZE( $StageConfiguration.$NextActivityIds ) 
+        {
+            $Configuration.$NextActivityIds = $StageConfiguration.$NextActivityIds;
+        }
+       
+        RETURN $Configuration; 
+    }
+           
+    /*---- Name : TraceDebug -------------------------------------------------------
+    Task        : Write a debug statement to the TraceLog.
+    Arguments   : String
+    Returnvalues: 
+    ------------------------------------------------------------------------------*/
+
+    DECLARE STATEMENT TraceDebug IN $Str PRIMITIVE
+    {
+        IF $Debug 
+        {
+            LOG $Str TYPE "DEBUG";
+        }
+        RETURN;
+    }
+
+
+    /*()----------------------------------------------------------------------------
+    ** LogSuccess
+    **----------------------------------------------------------------------------*/
+   
+	DECLARE STATEMENT LogSuccess      
+	                   IN $SessionId  PRIMITIVE
+		MessageId      IN $MessageId  PRIMITIVE
+        LoggerId       IN $LoggerId   PRIMITIVE
+        ActivityId     IN $ActivityId PRIMITIVE
+        MapName        IN $MapName     = "" PRIMITIVE
+        JDBCChannel    IN $JDBCChannel = "" PRIMITIVE
+        JDBCChannelOverrideProperties IN $JDBCChannelOverrideProperties RECORD JDBCChannelOverrideProperties
+ 
+	{
+		DECLARE $Event		   	   RECORD B2BI_USEREVENT.Event;
+		DECLARE $ParentLoggerIds[] STRING;
+
+		$Event.$Severity = B2BI_USEREVENT.$EventSeverity_Info;
+		$Event.$Description = Format("Set DML Map for the dynamic Map Loader ", IMBC_COMMON.$MBCName);
+
+		$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "Map Name";
+		$Event.$Data[ArraySize($Event.$Data)].$Value = $MapName;
+
+		$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC Channel Name";
+		$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannel;			
+
+		FOR $I = 1 TO ArraySize($JDBCChannelOverrideProperties.$Overrides)
+		{
+			
+			$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC Driver Class";
+			$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannelOverrideProperties.$Overrides[$i].$DriverClass;			
+
+			$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC User";
+			$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannelOverrideProperties.$Overrides[$i].$User;		
+			
+			$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC URL";
+			$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannelOverrideProperties.$Overrides[$i].$UrlTemplate;			
+	
+			$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC Delay";
+			$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannelOverrideProperties.$Overrides[$i].$Delay;			
+
+			$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "JDBC Attempts";
+			$Event.$Data[ArraySize($Event.$Data)].$Value = $JDBCChannelOverrideProperties.$Overrides[$i].$Attempts;
+		}	
+		
+		B2BI_USEREVENT.CreateEvent $SessionId
+			MessageId $MessageId
+			LoggerId $LoggerId
+			ParentLoggerIds $ParentLoggerIds
+			ActivityId $ActivityId
+			Event $Event;
+			
+		RETURN;
+
+    }
+
+ 
+    /*()----------------------------------------------------------------------------
+    ** LogError
+    **----------------------------------------------------------------------------*/
+    DECLARE STATEMENT
+    LogError        IN $SessionId        PRIMITIVE
+        MessageId   IN $MessageId        PRIMITIVE
+        LoggerId    IN $LoggerId         PRIMITIVE
+        ActivityId  IN $ActivityId       PRIMITIVE
+        ParentId    IN $ParentId = ""    PRIMITIVE
+        Description IN $Description = "" PRIMITIVE
+	{
+		DECLARE $Event		   	RECORD B2BI_USEREVENT.Event;
+		DECLARE $ParentLoggerIds[] STRING;
+
+		$Event.$Severity = B2BI_USEREVENT.$EventSeverity_Error;
+		$Event.$Description = Format("Component %s finished with error: %s", IMBC_COMMON.$MBCName, $Logstring);
+				
+		B2BI_USEREVENT.CreateEvent $SessionId
+			MessageId $MessageId
+			LoggerId $LoggerId
+			ActivityId $ActivityId
+			Event $Event;
+			
+		RETURN;
+	}
+
+
+	/*------------------------------------------------------------------------------
+	** SetAttributeDynamicMBC
+	**----------------------------------------------------------------------------*/
+	DECLARE PUBLIC STATEMENT SetAttributeDynamicMBC IN $SessionId PRIMITIVE
+		MessageId             IN $MessageId PRIMITIVE
+		DynamicMBCAttribute  IN $DynamicMBCAttribute   RECORD MBCI_HIERCHMSGENV.AttributeDynamicMBC
+	{
+		DECLARE $AttributeString    STRING;
+
+		TRY
+		{
+			SERIALIZE $DynamicMBCAttribute INTO $AttributeString;
+			MBC_HIERCHMSGENV.SetAttribute $SessionId
+				MessageId $MessageId
+				Name      MBCI_HIERCHMSGENV.$Attribute_DynamicMBC
+				Value     $AttributeString;
+		}
+		CATCH $exception
+		WHEN OTHERS
+		{
+			LOG SOURCEMODULE() & "." & SOURCEPROCEDURE() & $LogString;
+			THROW $exception;
+		}
+		RETURN;
+	}
+
+	/*------------------------------------------------------------------------------
+	** ToString
+	**----------------------------------------------------------------------------*/
+	DECLARE FUNCTION ToString($Any)    PRIMITIVE
+	  {
+			DECLARE $String    STRING;
+
+			SERIALIZE $Any INTO $String;
+
+			RETURN $String;
+	}
+	
+	/*------------------------------------------------------------------------------
+	** SetOutputs
+	**----------------------------------------------------------------------------*/
+	DECLARE FUNCTION SetOutputs($ConfigString PRIMITIVE)[]
+	{
+
+		DECLARE $Outputs[] STRING;
+
+		IF $ConfigString <> ""
+		{
+			$Outputs = SL_STRING.FieldExplode($ConfigString,",");
+		}
+		RETURN $Outputs;
+	}
+
+		
+	/*------------------------------------------------------------------------------
+	** AddJDBCChannelOverride
+	**----------------------------------------------------------------------------*/
+	DECLARE STATEMENT AddJDBCChannelOverride IN $Channel PRIMITIVE
+		Component     IN $Component PRIMITIVE
+		JDBCChannelOverrideProperties IN OUT $JDBCChannelOverrideProperties RECORD JDBCChannelOverrideProperties
+		
+
+	{
+		DECLARE $Index INTEGER;
+		
+		DECLARE $JDBCCOnfiguration RECORD DML_CHANNEL.JDBCConfiguration;
+		
+		$JDBCCOnfiguration=DML_CHANNEL.GetJDBCChannel($Channel);
+		
+		$Index = ARRAYSIZE($JDBCChannelOverrideProperties.$Overrides) + 1;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_AliasName = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$AliasName = $Component & ":" & $Channel;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_FlowName = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$FlowName = $Component;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_DriverClass = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$DriverClass = $JDBCCOnfiguration.$DriverClass;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_User = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$User = $JDBCCOnfiguration.$User;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_Password = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Password = $JDBCCOnfiguration.$Password;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_UrlTemplate = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$UrlTemplate = $JDBCCOnfiguration.$URL ;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_ValidationQuery = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$ValidationQuery = "";
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_Delay = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Delay = $JDBCCOnfiguration.$Delay;
+
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_Attempts = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Attempts = $JDBCCOnfiguration.$Attempts;
+
+		/*
+		 * Using "*ANY*" custom function name will make sure custom functions will use the same overrides
+		 * For the given alias name and flow
+		 */
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$Use_CustomFunctionName = 1;
+		$JDBCChannelOverrideProperties.$Overrides[$Index].$CustomFunctionName = "*ANY*";
+
+		RETURN;
+	}
+
+    
+} /* END MODULE IMBC_HIERCHMSGENV */

@@ -1,0 +1,12 @@
+/* 
+ * store the associations between map-loader and map-stage
+ * !! This file is a copy of att_DynamicMapEx.s4h for use with DML code. Please keep in sync !!
+ */
+
+DECLARE PUBLIC $MapLoaderAttributeName = "MAP-LOADER" CONSTANT STRING;
+
+
+DECLARE PUBLIC RECORD MAPLOADER {
+	DECLARE PUBLIC  FIELD $MAPNAME STRING;
+	}
+	
